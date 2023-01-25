@@ -16,34 +16,21 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-.dashboard {
-  position: relative;
-  color: @almost-black;
-  flex-grow: 1;
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
 
-/* only top-level tabs have popover, give it more padding to match header + tabs */
-.dashboard > .with-popover-menu > .popover-menu {
-  left: 24px;
-}
+import React from 'react';
+import { Global } from '@emotion/react';
+import { css } from '@superset-ui/core';
 
-/* drop shadow for top-level tabs only */
-.dashboard .dashboard-component-tabs {
-  box-shadow: 0 4px 4px 0 fade(@darkest, @opacity-light);
-  padding-left: 8px; /* note this is added to tab-level padding, to match header */
-}
-
-.dropdown-toggle.btn.btn-primary .caret {
-  color: @lightest;
-}
-
-.background--transparent {
-  background-color: transparent;
-}
-
-.background--white {
-  background-color: @lightest;
-}
+export const SqlLabGlobalStyles = () => (
+  <Global
+    styles={theme => css`
+      body {
+        min-height: max(
+          100vh,
+          ${theme.gridUnit * 125}px
+        ); // Set a min height so the gutter is always visible when resizing
+        overflow: hidden;
+      }
+    `}
+  />
+);

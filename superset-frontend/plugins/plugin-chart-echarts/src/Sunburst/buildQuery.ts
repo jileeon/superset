@@ -16,40 +16,14 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-@import '../../../assets/stylesheets/less/variables.less';
+import { buildQueryContext, QueryFormData } from '@superset-ui/core';
 
-.new-component {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: nowrap;
-  align-items: center;
-  padding: 16px;
-  background: @lightest;
-  cursor: move;
-
-  &:not(.static):hover {
-    background: @gray-bg;
-  }
-}
-
-.new-component-placeholder {
-  position: relative;
-  background: @gray-bg;
-  width: 40px;
-  height: 40px;
-  margin-right: 16px;
-  border: 1px solid @lightest;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: @gray;
-  font-size: @font-size-xxl;
-
-  &.fa-window-restore {
-    font-size: @font-size-l;
-  }
-
-  &.fa-area-chart {
-    font-size: @font-size-xl;
-  }
+export default function buildQuery(formData: QueryFormData) {
+  const { metric, sort_by_metric } = formData;
+  return buildQueryContext(formData, baseQueryObject => [
+    {
+      ...baseQueryObject,
+      ...(sort_by_metric && { orderby: [[metric, false]] }),
+    },
+  ]);
 }
