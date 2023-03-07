@@ -119,7 +119,6 @@ function prepareDashboardFilters(
     });
     if (dashboardId) {
       const jsonMetadata = {
-        show_native_filters: true,
         native_filter_configuration: allFilters,
         timed_refresh_immune_slices: [],
         expanded_slices: {},
@@ -283,7 +282,7 @@ describe('Horizontal FilterBar', () => {
     cy.getBySel('form-item-value').should('have.length', 3);
     cy.viewport(768, 1024);
     cy.getBySel('form-item-value').should('have.length', 0);
-    openMoreFilters();
+    openMoreFilters(false);
     cy.getBySel('form-item-value').should('have.length', 3);
 
     cy.getBySel('filter-bar').click();

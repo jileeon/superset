@@ -56,6 +56,7 @@ from superset import (
 )
 from superset.charts.commands.exceptions import ChartNotFoundError
 from superset.charts.dao import ChartDAO
+from superset.charts.data.commands.get_data_command import ChartDataCommand
 from superset.common.chart_data import ChartDataResultFormat, ChartDataResultType
 from superset.common.db_query_status import QueryStatus
 from superset.connectors.base.models import BaseDatasource
@@ -107,8 +108,8 @@ from superset.security.analytics_db_safety import check_sqlalchemy_uri
 from superset.sql_lab import get_sql_results
 from superset.sql_parse import ParsedQuery
 from superset.sql_validators import get_validator_by_name
-from superset.sqllab.command import CommandResult, ExecuteSqlCommand
 from superset.sqllab.command_status import SqlJsonExecutionStatus
+from superset.sqllab.commands.execute import CommandResult, ExecuteSqlCommand
 from superset.sqllab.exceptions import (
     QueryIsForbiddenToAccessException,
     SqlLabException,
@@ -141,7 +142,6 @@ from superset.views.base import (
     api,
     BaseSupersetView,
     common_bootstrap_payload,
-    create_table_permissions,
     CsvResponse,
     data_payload_response,
     deprecated,
@@ -852,7 +852,7 @@ class Superset(BaseSupersetView):  # pylint: disable=too-many-public-methods
             )
         except SupersetException:
             datasource_id = None
-            # fallback unkonw datasource to table type
+            # fallback unknown datasource to table type
             datasource_type = SqlaTable.type
 
         datasource: Optional[BaseDatasource] = None
@@ -999,6 +999,7 @@ class Superset(BaseSupersetView):  # pylint: disable=too-many-public-methods
     @has_access_api
     @event_logger.log_this
     @expose("/filter/<datasource_type>/<int:datasource_id>/<column>/")
+    @deprecated()
     def filter(  # pylint: disable=no-self-use
         self, datasource_type: str, datasource_id: int, column: str
     ) -> FlaskResponse:
@@ -1142,6 +1143,7 @@ class Superset(BaseSupersetView):  # pylint: disable=too-many-public-methods
     @event_logger.log_this
     @expose("/tables/<int:db_id>/<schema>/")
     @expose("/tables/<int:db_id>/<schema>/<force_refresh>/")
+    @deprecated()
     def tables(  # pylint: disable=no-self-use
         self,
         db_id: int,
@@ -1738,28 +1740,35 @@ class Superset(BaseSupersetView):  # pylint: disable=too-many-public-methods
 
         for slc in slices:
             try:
-                form_data = get_form_data(slc.id, use_slice_data=True)[0]
-                if dashboard_id:
-                    form_data["extra_filters"] = (
-                        json.loads(extra_filters)
-                        if extra_filters
-                        else get_dashboard_extra_filters(slc.id, dashboard_id)
+                query_context = slc.get_query_context()
+                if query_context:
+                    query_context.force = True
+                    command = ChartDataCommand(query_context)
+                    command.validate()
+                    payload = command.run()
+                else:
+                    form_data = get_form_data(slc.id, use_slice_data=True)[0]
+                    if dashboard_id:
+                        form_data["extra_filters"] = (
+                            json.loads(extra_filters)
+                            if extra_filters
+                            else get_dashboard_extra_filters(slc.id, dashboard_id)
+                        )
+
+                    if not slc.datasource:
+                        raise Exception("Slice's datasource does not exist")
+
+                    obj = get_viz(
+                        datasource_type=slc.datasource.type,
+                        datasource_id=slc.datasource.id,
+                        form_data=form_data,
+                        force=True,
                     )
+                    # pylint: disable=assigning-non-slot
+                    g.form_data = form_data
+                    payload = obj.get_payload()
+                    delattr(g, "form_data")
 
-                if not slc.datasource:
-                    raise Exception("Slice's datasource does not exist")
-
-                obj = get_viz(
-                    datasource_type=slc.datasource.type,
-                    datasource_id=slc.datasource.id,
-                    form_data=form_data,
-                    force=True,
-                )
-
-                # pylint: disable=assigning-non-slot
-                g.form_data = form_data
-                payload = obj.get_payload()
-                delattr(g, "form_data")
                 error = payload["errors"] or None
                 status = payload["status"]
             except Exception as ex:  # pylint: disable=broad-except
@@ -1917,6 +1926,7 @@ class Superset(BaseSupersetView):  # pylint: disable=too-many-public-methods
     @has_access
     @expose("/get_or_create_table/", methods=["POST"])
     @event_logger.log_this
+    @deprecated()
     def sqllab_table_viz(self) -> FlaskResponse:  # pylint: disable=no-self-use
         """Gets or creates a table object with attributes passed to the API.
 
@@ -1946,11 +1956,11 @@ class Superset(BaseSupersetView):  # pylint: disable=too-many-public-methods
                 table.schema = data.get("schema")
                 table.template_params = data.get("templateParams")
                 # needed for the table validation.
+                # fn can be deleted when this endpoint is removed
                 validate_sqlatable(table)
 
             db.session.add(table)
             table.fetch_metadata()
-            create_table_permissions(table)
             db.session.commit()
 
         return json_success(json.dumps({"table_id": table.id}))
@@ -1967,7 +1977,7 @@ class Superset(BaseSupersetView):  # pylint: disable=too-many-public-methods
             raise SupersetGenericErrorException(
                 __(
                     "One or more required fields are missing in the request. Please try "
-                    "again, and if the problem persists conctact your administrator."
+                    "again, and if the problem persists contact your administrator."
                 ),
                 status=400,
             ) from ex
@@ -2089,6 +2099,7 @@ class Superset(BaseSupersetView):  # pylint: disable=too-many-public-methods
     @has_access_api
     @expose("/results/<key>/")
     @event_logger.log_this
+    @deprecated()
     def results(self, key: str) -> FlaskResponse:
         return self.results_exec(key)
 
@@ -2132,7 +2143,7 @@ class Superset(BaseSupersetView):  # pylint: disable=too-many-public-methods
             raise SupersetErrorException(
                 SupersetError(
                     message=__(
-                        "The query associated with these results could not be find. "
+                        "The query associated with these results could not be found. "
                         "You need to re-run the original query."
                     ),
                     error_type=SupersetErrorType.RESULTS_BACKEND_ERROR,
@@ -2312,6 +2323,7 @@ class Superset(BaseSupersetView):  # pylint: disable=too-many-public-methods
     @handle_api_exception
     @event_logger.log_this
     @expose("/sql_json/", methods=["POST"])
+    @deprecated()
     def sql_json(self) -> FlaskResponse:
         errors = SqlJsonPayloadSchema().validate(request.json)
         if errors:
@@ -2351,7 +2363,7 @@ class Superset(BaseSupersetView):  # pylint: disable=too-many-public-methods
             SqlQueryRenderImpl(get_template_processor),
             sql_json_executor,
             execution_context_convertor,
-            config.get("SQLLAB_CTAS_NO_LIMIT"),  # type: ignore
+            config["SQLLAB_CTAS_NO_LIMIT"],
             log_params,
         )
 
@@ -2389,6 +2401,7 @@ class Superset(BaseSupersetView):  # pylint: disable=too-many-public-methods
     @has_access
     @event_logger.log_this
     @expose("/csv/<client_id>")
+    @deprecated()
     def csv(self, client_id: str) -> FlaskResponse:  # pylint: disable=no-self-use
         """Download the query results as csv."""
         logger.info("Exporting CSV file [%s]", client_id)
